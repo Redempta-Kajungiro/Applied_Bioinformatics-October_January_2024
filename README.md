@@ -1,4 +1,5 @@
-Title:Using comparative transcriptomics to understand the evolution of niche width and host use in beetles
+Title:Using comparative transcriptomics to understand the evolution of niche width and host use in beetles.
+
 Abstract
 
 In this project, we used RNA seq data to investigate gene expression patterns in four seed beetle species (CCM, CCC, CAA, AOO) subjected to four different food types: Natural host bean, Artificial pellets with natural host bean (control), Artificial pellets with natural host bean plus bergapten, and Artificial pellets with a mix of four host beans.
