@@ -1,0 +1,38 @@
+#!/bin/bash -l
+#SBATCH -A xxxx
+#SBATCH -p core
+#SBATCH -n 20
+#SBATCH -t 30:00:00
+#SBATCH -J htseq_readcount_job_Ca
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user xxxxx
+
+# load modules
+module load bioinfo-tools
+module load htseq
+module load samtools
+
+
+# Set the path to the output directory
+INPUT_DIR="/proj/naiss2023-6-185/bioinformatics-project/analysis/mapped-data/Ca"
+OUTPUT_DIR="/proj/naiss2023-6-185/bioinformatics-project/analysis/read-count/Ca"
+
+# Set the path to the genome fasta file
+GENOMANNOTATED="/proj/naiss2023-6-185/bioinformatics-project/annotation/Ca/Ca_rc3.1_analis.gff"
+
+SAMPLES=("S1" "S2" "S4" "S8" "S10" "S12" "S13" "S14" "S15" "S17" "S18" "S20" "S21" "S24" "S3" "S5" "S9" "S11" "S16" "S19" "S22" "S23")
+
+
+# Loop through each sample
+for SAMPLE in "${SAMPLES[@]}"; do
+  (
+  echo "${SAMPLE} started"
+  
+  htseq-count -f sam -r pos -s reverse -t CDS -i ID $INPUT_DIR/${SAMPLE}.bam $GENOMANNOTATED > $OUTPUT_DIR/${SAMPLE}_read_count.txt
+  
+  echo "${SAMPLE} read-count finished"
+  ) &
+done
+
+# Wait for all background processes to finish
+wait
