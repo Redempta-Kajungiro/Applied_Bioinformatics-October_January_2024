@@ -1,0 +1,330 @@
+# Install and load necessary packages
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(version = "3.18")
+
+BiocManager::install("DESeq2")
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("rtracklayer")
+
+library(DESeq2)
+library(pheatmap)
+packageVersion("pheatmap")
+
+library(dplyr)
+
+##############################################################################
+# defining variables
+##############################################################################
+
+path_data <- "C:/Users/46705/Documents/Beetles&Beans"
+setwd(path_data)
+species <- "Ao"
+species_lc <- "ao"
+
+# Construct the file name
+file_reads <- paste0(species_lc, "_data.csv")
+
+# Load sample information 
+file_info <- paste0(species_lc, "_sample_information", ".csv")
+
+##############################################################################
+# reading data both meta data and read counts
+##############################################################################
+
+
+# Read the CSV file
+data_reads <- read.csv(file_reads, sep = ",", row.names = "gene.ids")
+
+# Read the CSV file
+data_info <- read.csv(file_info, sep = ",", row.names = "sample.name")
+
+coldata_gut <- data_info[data_info$tissue == "Gut", ]
+coldata_gut$treatment <- factor(coldata_gut$treatment)
+
+
+data_gut <- data_reads[, rownames(coldata_gut)]
+# data_gut
+data_gut_M <- as.matrix(data_gut)
+dim(data_gut_M)
+
+
+##############################################################################
+# Removing rows/genes where the read counts are too low (no two genes 
+# with more than 10 read counts)
+##############################################################################
+
+# Function to remove rows/genes that have less than 2 rows with at least 10 reads
+filter_rows_by_threshold <- function(dataframe, threshold = 10, min_columns = 2) {
+  # Store the row names separately
+  row_names <- row.names(dataframe)
+  
+  # Remove the first row (sample names)
+  data_no_samples <- dataframe[-1, , drop = FALSE]
+  
+  # Function to check if at least 'min_columns' meet the threshold
+  check_threshold <- function(row, threshold) {
+    sum(row >= threshold, na.rm = TRUE) >= min_columns
+  }
+  
+  # Apply the check_threshold function row-wise to filter rows
+  row_conditions <- apply(data_no_samples, 1, check_threshold, threshold = threshold)
+  filtered_df <- data_no_samples[row_conditions, ]
+  
+  # Restore row names to the filtered dataframe
+  row.names(filtered_df) <- row.names(data_no_samples)[row_conditions]
+  
+  return(filtered_df)
+}
+
+
+# Running the data on the function, removing low readcount genes/rows
+filtered_result <- filter_rows_by_threshold(data_gut_M)
+dim(filtered_result)
+type(filtered_result)
+
+
+##############################################################################
+# rbuilding the deseq data tabel 
+# running DEseq on the table
+##############################################################################
+
+# Build DESeqDataSet
+dds_gut <- DESeqDataSetFromMatrix(countData = filtered_result,
+                                  colData = coldata_gut,
+                                  design = ~ treatment)
+
+dds_gut$treatment
+dds_gut$treatment <- factor(dds_gut$treatment, levels = c("AP-WB", "Mixed_Bean", "White_Bean"))
+
+
+dds_gut$treatment <- relevel(dds_gut$treatment, ref = "AP-WB")
+
+dds_gut <- DESeq(dds_gut)
+resultsNames(dds_gut)
+
+
+##############################################################################
+# Log Transformation
+##############################################################################
+
+rld_gut_only <- rlog(dds_gut, blind = FALSE)
+
+##############################################################################
+# creating resulttables - contrasts being defined
+##############################################################################
+resultsNames(dds_gut)
+
+# shrinking the data object makes result table 
+# resLFC_bergapten <- lfcShrink(dds_gut, coef="treatment_AP.MB.Bergapten_vs_AP.MB", type="apeglm")
+resLFC_bean <- lfcShrink(dds_gut, coef="treatment_White_Bean_vs_AP.WB", type="apeglm")
+resLFC_mix <- lfcShrink(dds_gut, coef="treatment_Mixed_Bean_vs_AP.WB", type="apeglm")
+resultsNames(dds_gut)
+
+# # non shrinken result table 
+# res_gut_bergapten <- results(dds_gut, contrast = c("treatment", "Mixed_Bean", "Artificial_BEB"))
+# # non shrinken result table 
+# res_gut_bean <- results(dds_gut, contrast = c("treatment", "Artificial_BEB", "")) 
+# # Run DESeq deseq object created
+# dds_gut <- DESeq(dds_gut)
+# resultsNames(dds_gut)
+
+##############################################################################
+# investigation on p-values and log values
+##############################################################################
+
+
+# Assuming you have the results stored in the variables resLFC_bean and resLFC_mix
+
+# Create a table with the summary statistics for log2 fold change
+log2fold_result_table <- data.frame(
+  Comparison = c("Bean", "Mix"),
+  Padj_Less_Than_0.05 = c(
+    sum(resLFC_bean$padj < 0.05 & abs(resLFC_bean$log2FoldChange) > 2, na.rm=TRUE),
+    sum(resLFC_mix$padj < 0.05 & abs(resLFC_mix$log2FoldChange) > 2, na.rm=TRUE)
+  ),
+  Padj_Less_Than_0.01 = c(
+    sum(resLFC_bean$padj < 0.01 & abs(resLFC_bean$log2FoldChange) > 2, na.rm=TRUE),
+    sum(resLFC_mix$padj < 0.01 & abs(resLFC_mix$log2FoldChange) > 2, na.rm=TRUE)
+  ),
+  Padj_Less_Than_0.001 = c(
+    sum(resLFC_bean$padj < 0.001 & abs(resLFC_bean$log2FoldChange) > 2, na.rm=TRUE),
+    sum(resLFC_mix$padj < 0.001 & abs(resLFC_mix$log2FoldChange) > 2, na.rm=TRUE)
+  )
+)
+
+# Print the table
+kable(log2fold_result_table, caption = "Summary Statistics of Log2 Fold Change")
+
+
+##############################################################################
+# top significant genes
+##############################################################################
+
+# Assuming resLFC is your data frame
+# Check for NA values in padj and filter accordingly
+#significant_l2fc_res_bergapten <- resLFC_bergapten[!is.na(resLFC_bergapten$padj) & resLFC_bergapten$padj < 0.001 & abs(resLFC_bergapten$log2FoldChange) > 2, ]
+significant_l2fc_res_mix <- resLFC_mix[!is.na(resLFC_mix$padj) & resLFC_mix$padj < 0.05 & abs(resLFC_mix$log2FoldChange) > 2, ]
+significant_l2fc_res_mix_ao <- resLFC_mix[!is.na(resLFC_mix$padj) & resLFC_mix$padj < 0.05 & abs(resLFC_mix$log2FoldChange) > 2, ]
+significant_l2fc_res_bean <- resLFC_bean[!is.na(resLFC_bean$padj) & resLFC_bean$padj < 0.05 & abs(resLFC_bean$log2FoldChange) > 2, ]
+num_significant <- 50
+
+# list of names of the top significant genes
+# top_hits_padj_bergapten <- rownames(significant_l2fc_res_bergapten)[order(significant_l2fc_res_bergapten$padj)][1:num_significant]
+# top_hits_l2fc_bergapten <- rownames(significant_l2fc_res_bergapten)[order(significant_l2fc_res_bergapten$log2FoldChange)][1:num_significant]
+
+top_hits_padj_mix <- rownames(significant_l2fc_res_mix)[order(significant_l2fc_res_mix$padj)][1:num_significant]
+top_hits_l2fc_mix <- rownames(significant_l2fc_res_mix)[order(significant_l2fc_res_mix$log2FoldChange)][1:num_significant]
+
+
+# sorted_results_padj_bergapten <- significant_l2fc_res_bergapten[order(significant_l2fc_res_bergapten$padj), ]
+# sorted_results_l2fc_bergapten <- significant_l2fc_res_bergapten[order(-abs(significant_l2fc_res_bergapten$log2FoldChange)), ]
+
+sorted_results_padj_mix <- significant_l2fc_res_mix[order(significant_l2fc_res_mix$padj), ]
+sorted_results_l2fc_mix <- significant_l2fc_res_mix[order(-abs(significant_l2fc_res_mix$log2FoldChange)), ]
+
+
+# table of signigicant genes including log values and p values etc
+# top_genes_padj_bergapten <- sorted_results_padj_bergapten[1:num_significant, ]
+# top_genes_l2fc_bergapten <- sorted_results_l2fc_bergapten[1:num_significant, ]
+
+top_genes_padj_mix <- sorted_results_padj_mix[1:num_significant, ]
+top_genes_l2fc_mix <- sorted_results_l2fc_mix[1:num_significant, ]
+
+##############################################################################
+# annotation table to use in heatmap
+##############################################################################
+
+# Create annotation data
+df_gut <- as.data.frame(colData(dds_gut)[, c("tissue", "treatment")])
+
+# Subset annotation data to include only Gut samples
+df_gut <- df_gut[df_gut$tissue == "Gut", ]
+
+# ##############################################################################
+# # connecting IDs to gene names and functions
+# ##############################################################################
+# 
+# gff_df
+# 
+# 
+# ##############################################################################
+# # look at significan genes real names (i can not create this df something wrong with pagage) this one is from simon
+# ##############################################################################
+# 
+# gff_df
+# 
+# ##################################
+# #try 2
+# #################################
+# 
+# 
+# last_digits_list <- gsub(".*([0-9]{7})$", "\\1", top_hits_gut)
+# 
+# # Extract the last 7 digits from the IDs in df
+# gff_df$last_digits <- gsub(".*([0-9]{7})$", "\\1", gff_df$ID)
+# 
+# # Filter rows where the last_digits match any element in list1
+# filtered_rows <- gff_df[grep(paste0(last_digits_list, collapse = "|"), gff_df$last_digits), ]
+# 
+# 
+# # Extracting last seven digits from name_list using regular expression
+# name_list_last_digits <- gsub(".*([0-9]{7})$", "\\1", top_hits_gut)
+# 
+# # Creating a new data frame with the extracted last digits
+# new_table <- data.frame(Name = top_hits_gut , last_digits = name_list_last_digits)
+# 
+# 
+# 
+# # Assuming 'new_table' and 'filtered_rows' are your data frames
+# filtered_rows_not_na <- filtered_rows[!is.na(filtered_rows$product), ]
+# 
+# # Perform conditional merge
+# result_table <- merge(new_table, filtered_rows_not_na[, c("last_digits", "product")], by = "last_digits", all.x = TRUE)
+# 
+
+##############################################################################
+# Heatmap signigicant genes
+##############################################################################
+
+
+# # Perform hierarchical clustering and create the heatmap
+# clustering_data_l2fc_bergapten <- pheatmap(
+#   assay(rld_gut_only)[top_hits_l2fc_bergapten,],
+#   cluster_rows = TRUE,
+#   show_rownames = TRUE,
+#   cluster_cols = TRUE,
+#   annotation_col = df_gut,
+#   main = "Bergaptent to AP - l2fc",
+#   clustering_method_rows = "complete"
+# )
+# 
+# # Extract the clustering data for rows
+# rows_clustered_l2fc_bergapten <- clustering_data_l2fc_bergapten$tree_row
+# 
+# # Print or use the list of clustered rows
+# plot(rows_clustered_l2fc_bergapten)
+# 
+# 
+# pheatmap(assay(rld_gut_only)[top_hits_padj_bergapten,], 
+#          cluster_rows = TRUE, 
+#          show_rownames = TRUE, 
+#          cluster_cols = TRUE, 
+#          annotation_col = df_gut, 
+#          main = "Bergaptent to AP - padj")
+
+
+pheatmap(assay(rld_gut_only)[top_hits_l2fc_mix,], 
+         cluster_rows = TRUE, 
+         show_rownames = FALSE, 
+         cluster_cols = TRUE, 
+         annotation_col = df_gut, 
+         main = paste("Mix to AP - l2fc", species))
+
+
+pheatmap(assay(rld_gut_only)[top_hits_padj_mix,], 
+         cluster_rows = TRUE, 
+         show_rownames = FALSE, 
+         cluster_cols = TRUE, 
+         annotation_col = df_gut, 
+         main = paste("Mix to AP - padj", species))
+
+
+Bean <- rownames(significant_l2fc_res_bean)
+#Beragapten <- rownames(significant_l2fc_res_bergapten)
+Mix <- rownames(significant_l2fc_res_mix)
+
+# Create Venn diagram
+venn.plot.ao <- VennDiagram::venn.diagram(
+  x = list(list1 = Bean, list2 = Mix),
+  category.names = c("Bean-Control", "Mix-Control"),
+  filename = NULL,
+  main = paste("DE genes in", species, ", padj<0.05 and abs(l2fc)"),
+  main.cex = 1.75,
+  output = TRUE ,
+  imagetype="png" ,
+  height = 480 , 
+  width = 480 , 
+  resolution = 300,
+  compression = "lzw",
+  lwd = 2,
+  col = c("#440154ff", '#21908dff'),
+  fill = c(alpha("#440154ff", 0.3), alpha('#21908dff', 0.3)),
+  cex = 1.5,
+  fontfamily = "sans",
+  cat.cex = 1.25,
+  cat.default.pos = "outer",
+  cat.pos = c(-27, 27),
+  cat.dist = c(0.055, 0.055),
+  cat.fontfamily = "sans",
+  cat.col = c("#440154ff", '#21908dff'),
+  scale=FALSE
+)
+
+# Save the Venn diagram
+grid.draw(venn.plot.ao)
+
+
