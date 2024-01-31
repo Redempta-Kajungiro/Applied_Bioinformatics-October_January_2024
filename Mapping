@@ -1,0 +1,55 @@
+#!/bin/bash -l
+#SBATCH -A xxx
+#SBATCH -p core
+#SBATCH -n 20
+#SBATCH -t 30:00:00
+#SBATCH -J HISAT2_Cm_88-99
+#SBATCH --mail-type=ALL
+#SBATCH --mail-xxxxx
+
+# load modules
+module load bioinfo-tools
+module load HISAT2
+module load samtools
+
+# Set the path to the input directory containing the read files
+INPUT_DIR="/proj/naiss2023-6-185/bioinformatics-project/analysis/trimmed-data/Cm"
+
+# Set the path to the output directory
+OUTPUT_DIR="/proj/naiss2023-6-185/bioinformatics-project/analysis/mapped-data/Cm"
+
+# Set the path to the genome fasta file
+GENOME="/proj/naiss2023-6-185/bioinformatics-project/genome/Cm"
+
+# Set the path to the HISAT2 index directory
+INDEX_DIR="/proj/naiss2023-6-185/bioinformatics-project/code/mapping/Cm/index_Cm"
+
+# List of sample names run 1
+SAMPLES=("S88" "S89" "S90" "S91" "S92" "S93" "S94" "S95" "S96" "S97" "S98" "S99")
+# List of sample names run 2
+#SAMPLES=("S100" "S101" "S102" "S103" "S104" "S105" "S106" "S107" "S108" "S109" "S110" "S111")
+
+# Build HISAT2 index for the genome (if not already built)
+# hisat2-build "$GENOME/C.maculatus_pb_155_falcon_primary_rn_min500_quiver.corr.DP_filtered_6_176.SIZE_wi_10bp.fasta" "${INDEX_DIR}/genome_index"
+
+# Loop through each sample
+for SAMPLE in "${SAMPLES[@]}"; do
+  (
+    echo "Processing sample: ${SAMPLE}"
+
+    # Run HISAT2 for each sample (paired-end)
+    hisat2 -x "${INDEX_DIR}/genome_index" -1 "${INPUT_DIR}/${SAMPLE}_trimmed-Cm_1P.fq.gz" -2 "${INPUT_DIR}/${SAMPLE}_trimmed-Cm_2P.fq.gz" -S "${OUTPUT_DIR}/${SAMPLE}.sam"
+    echo "HISAT2 mapping completed for ${SAMPLE}"
+
+    # Convert SAM to BAM and sort the output
+    samtools view -bS "${OUTPUT_DIR}/${SAMPLE}.sam" | samtools sort -o "${OUTPUT_DIR}/${SAMPLE}.bam"
+
+    echo "BAM file created for ${SAMPLE}"
+
+    # Optionally, you can remove the intermediate SAM file
+    rm "${OUTPUT_DIR}/${SAMPLE}.sam"
+  ) &
+done
+
+# Wait for all background processes to finish
+wait
