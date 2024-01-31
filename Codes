@@ -1,4 +1,4 @@
-#TRIMMING
+#TRIMMING#
 #!/bin/bash -l
 #SBATCH -A xxxx
 #SBATCH -p core
